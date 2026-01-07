@@ -116,25 +116,45 @@ fn parse_format_fields(format_str: &str) -> HashMap<&str, usize> {
 }
 
 /// 从样本基因型字符串中提取DP和DV
+/// 核心修复：鲁棒处理AD字段的各种异常场景
 /// DP：直接从FORMAT的DP字段提取
-/// DV：从AD字段提取（AD格式为"REF深度,ALT深度"，取第二个值）
+/// DV：从AD字段提取（兼容AD=两个值/一个值/点号的情况）
 fn extract_dp_dv(gt_str: &str, format_map: &HashMap<&str, usize>) -> (u32, u32) {
     let gt_parts: Vec<&str> = gt_str.split(':').collect();
 
-    // 提取DP（动态索引，适配不同FORMAT顺序）
+    // 1. 提取DP（动态索引，适配不同FORMAT顺序）
     let dp = format_map.get("DP")
         .and_then(|&idx| gt_parts.get(idx))
-        .and_then(|s| s.parse::<u32>().ok())
+        // 处理DP为"."的情况（缺失值）
+        .and_then(|s| if *s == "." { None } else { s.parse::<u32>().ok() })
         .unwrap_or(0);
 
-    // 提取DV（从AD字段的第二个值获取，AD格式：ref_depth,alt_depth）
+    // 2. 提取DV（核心修复：鲁棒处理AD字段）
     let dv = format_map.get("AD")
         .and_then(|&idx| gt_parts.get(idx))
-        .and_then(|ad_str| {
-            ad_str.split(',')
-                .nth(1)  // 取ALT等位基因的深度
-                .and_then(|s| s.parse::<u32>().ok())
+        .map(|ad_str| {
+            // 处理AD为"."的情况（缺失基因型）
+            if *ad_str == "." {
+                0
+            } else {
+                let ad_parts: Vec<&str> = ad_str.split(',').collect();
+                match ad_parts.len() {
+                    // 情况1：AD只有1个值（纯合简化格式）
+                    1 => {
+                        // 尝试解析数值，失败则返回0
+                        ad_parts[0].parse::<u32>().unwrap_or(0)
+                    }
+                    // 情况2：AD有2个及以上值（标准格式，取第二个值作为ALT深度）
+                    _ => {
+                        ad_parts[1]
+                            // 处理第二个值为"."的情况
+                            .parse::<u32>()
+                            .unwrap_or(0)
+                    }
+                }
+            }
         })
+        // 无AD字段时返回0
         .unwrap_or(0);
 
     (dp, dv)
@@ -193,7 +213,7 @@ fn process_vcf_line(
         let r = if dp > 0 { dv as f64 / dp as f64 } else { 0.0 };
         let mut gt_result = String::new();
 
-        // 基因型分类逻辑（完全复刻原AWK脚本）
+        // 基因型分类逻辑（完全复刻原AWK脚本，逻辑正确）
         if dp == 0 && alt_base == "." {
             // DP=0且无替代等位基因 → 纯合参考（0/0）
             gt_result = format!("0/0:{dp}:{dv}");
