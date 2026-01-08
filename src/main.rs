@@ -9,60 +9,73 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
-/// 高性能VCF过滤工具（仅过滤，保留所有原始字段，过滤条件写入Header最后）
-/// 核心功能：仅过滤不符合条件的位点，完全保留原始Header（仅在末尾添加过滤规则）
+/// VCF Filtering Tool (https://bitbucket.org/ipk_dg_public/vcf_filtering/)
+/// kaiquanyu@icloud.com
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// 输入VCF文件路径（支持.gz/bgzip压缩，不指定则从标准输入/管道读取）
+    /// Input VCF file path (supports .gz/bgzip compression; reads from stdin/pipeline if not specified)
     #[arg(short, long)]
     input: Option<String>,
 
     /// 输出VCF文件路径（支持.gz/bgzip压缩，不指定则输出到标准输出）
+    /// Output VCF file path (supports .gz/bgzip compression; writes to stdout if not specified)
     #[arg(short, long)]
     output: Option<String>,
 
     /// 纯合基因型最小DP阈值 [默认: 1]
+    /// Minimum DP threshold for homozygous genotypes [default: 1]
     #[arg(long, default_value_t = 1)]
     dphom: u32,
 
     /// 杂合基因型最小DP阈值 [默认: 1]
+    /// Minimum DP threshold for heterozygous genotypes [default: 1]
     #[arg(long, default_value_t = 1)]
     dphet: u32,
 
     /// 频率容差阈值 [默认: 0.2499]
+    /// Frequency tolerance threshold [default: 0.2499]
     #[arg(long, default_value_t = 0.2499)]
     tol: f64,
 
     /// 最小质量值阈值 [默认: 0]
+    /// Minimum quality score threshold [default: 0]
     #[arg(long, default_value_t = 0.0)]
     minqual: f64,
 
     /// INFO字段最小DP阈值 [默认: 0]
+    /// Minimum DP threshold in INFO field [default: 0]
     #[arg(long, default_value_t = 0)]
     mindp: u32,
 
     /// 最小纯合样本数阈值 [默认: 0]
+    /// Minimum number of homozygous samples threshold [default: 0]
     #[arg(long, default_value_t = 0)]
     minhomn: u32,
 
     /// 有效样本占比阈值 (present/(present+n)) [默认: 0.0]
+    /// Valid sample ratio threshold (present/(present+n)) [default: 0.0]
     #[arg(long, default_value_t = 0.0)]
     minpresent: f64,
 
     /// 纯合样本占有效样本比阈值 (A+B/present) [默认: 0.0]
+    /// Homozygous sample ratio in valid samples threshold (A+B/present) [default: 0.0]
     #[arg(long, default_value_t = 0.0)]
     minhomp: f64,
 
     /// 最小MAF阈值 [默认: 0.0]
+    /// Minimum MAF (Minor Allele Frequency) threshold [default: 0.0]
     #[arg(long, default_value_t = 0.0)]
     minmaf: f64,
 
     /// 压缩级别 (1-9, 6=平衡) [默认: 6，仅对文件输出生效]
+    /// Compression level (1-9, 6=balanced) [default: 6, only effective for file output]
     #[arg(long, default_value_t = 6)]
     compress_level: u32,
 
     /// 输入是否为压缩格式（仅对标准输入有效，自动检测则不指定）
+    /// Whether the input is compressed (only valid for stdin; auto-detect if not specified)
     #[arg(long)]
     input_compressed: bool,
 }
@@ -77,7 +90,7 @@ struct GenotypeStats {
     present: u32,    // 有效基因型数量（a + b + h）
 }
 
-/// 从INFO字段中提取指定数值（如DP）
+/// 从INFO字段中提取指定数值
 fn extract_info_value(info: &str, pattern: &Regex) -> Result<u32> {
     pattern
         .captures(info)
@@ -96,7 +109,7 @@ fn parse_format_fields(format_str: &str) -> HashMap<&str, usize> {
     field_map
 }
 
-/// 从样本基因型字符串中提取DP和DV（仅用于过滤计算，不修改输出）
+/// 从样本基因型字符串中提取DP和DV（仅用于过滤计算）
 fn extract_dp_dv(gt_str: &str, format_map: &HashMap<&str, usize>) -> (u32, u32) {
     let gt_parts: Vec<&str> = gt_str.split(':').collect();
 
