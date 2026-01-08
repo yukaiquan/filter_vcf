@@ -1,5 +1,4 @@
 # VCF Filter & Genotype Calling (Rust Version)
-# VCF过滤与基因型调用工具（Rust版本）
 A high-performance Rust reimplementation of the AWK VCF filtering script, with enhanced compatibility, performance and maintainability.  
 原AWK VCF过滤脚本的高性能Rust重实现版本，提升了兼容性、性能和可维护性。
 
@@ -27,9 +26,19 @@ Rust编程环境（1.60及以上版本）：[https://www.rust-lang.org/tools/ins
 
 ### Compilation 编译
 ```bash
+wget https://github.com/yukaiquan/filter_vcf/releases/download/v0.01/filter_vcf
+chmod 775 ./filter_vcf
+
+./filter_vcf --help
+```
+
+
+
+### Compilation 编译
+```bash
 # Clone or download the source code
 # 克隆或下载源代码
-git clone <your-repo-url>  # Or copy the main.rs and Cargo.toml files
+git clone https://github.com/yukaiquan/filter_vcf.git # Or copy the main.rs and Cargo.toml files
 # 或直接复制main.rs和Cargo.toml文件
 
 # Compile in release mode (optimized for performance)
