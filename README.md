@@ -23,10 +23,13 @@ The program reads VCF/VCF.gz files (supports BGZIP compression) and has the foll
 
 ### Install 安装
 ```bash
+
 wget https://github.com/yukaiquan/filter_vcf/releases/download/v0.01/filter_vcf
+
 chmod 775 ./filter_vcf
 
 ./filter_vcf --help
+
 ```
 
 
@@ -35,11 +38,11 @@ chmod 775 ./filter_vcf
 ```bash
 # Clone or download the source code
 # 克隆或下载源代码
-git clone https://github.com/yukaiquan/filter_vcf.git # Or copy the main.rs and Cargo.toml files
-# 或直接复制main.rs和Cargo.toml文件
+git clone https://github.com/yukaiquan/filter_vcf.git 
+
 
 # Compile in release mode (optimized for performance)
-# 以发布模式编译（优化性能）
+# 以发布模式编译
 cargo build --release
 
 # The compiled binary is located at
