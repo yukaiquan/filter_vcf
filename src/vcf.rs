@@ -24,7 +24,7 @@ fn extract_info_dp(input: &str, pattern: &Regex) -> u32 {
         .unwrap_or(0)
 }
 
-/// 动态解析FORMAT字段，返回字段名到索引的映射（仅用于找DP/AD）
+/// 动态解析FORMAT字段，返回字段名到索引的映射
 fn parse_format_fields(format_str: &str) -> HashMap<&str, usize> {
     let mut field_map = HashMap::new();
     for (idx, field) in format_str.split(':').enumerate() {
@@ -33,22 +33,29 @@ fn parse_format_fields(format_str: &str) -> HashMap<&str, usize> {
     field_map
 }
 
-/// 提取样本中的DP和用于计算r值的DV（仅用于逻辑判断，不输出）
-fn extract_sample_dp_and_r_value(gt_str: &str, format_map: &HashMap<&str, usize>) -> (u32, f64) {
-    let gt_parts: Vec<&str> = gt_str.split(':').collect();
+/// 提取样本的DP、r值，同时保留所有原始字段（关键修复）
+/// 提取样本的DP、r值，同时保留所有原始字段（修复类型转换错误）
+fn extract_sample_info(
+    gt_str: &str,
+    format_map: &HashMap<&str, usize>
+) -> (u32, f64, Vec<String>) {
+    // 关键修复：将&str迭代器转为String迭代器后再collect
+    let all_fields: Vec<String> = gt_str.split(':')
+        .map(|s| s.to_string()) // 每个&str转为String
+        .collect();
 
-    // 提取DP（从FORMAT映射中动态找，兼容任意位置）
+    // 提取DP（用于判断基因型，动态找DP索引）
     let dp = format_map.get("DP")
-        .and_then(|&idx| gt_parts.get(idx))
-        .and_then(|s| if *s == "." { None } else { s.parse::<u32>().ok() })
+        .and_then(|&idx| all_fields.get(idx))
+        .and_then(|s| if s == "." { None } else { s.parse::<u32>().ok() })
         .unwrap_or(0);
 
-    // 提取AD计算r值（仅用于判断基因型，不输出）
+    // 提取AD计算r值（仅用于判断，不修改AD字段）
     let r = if dp > 0 {
         let dv = format_map.get("AD")
-            .and_then(|&idx| gt_parts.get(idx))
+            .and_then(|&idx| all_fields.get(idx))
             .map(|ad_str| {
-                if *ad_str == "." {
+                if ad_str == "." {
                     0
                 } else {
                     let ad_parts: Vec<&str> = ad_str.split(',').collect();
@@ -64,10 +71,10 @@ fn extract_sample_dp_and_r_value(gt_str: &str, format_map: &HashMap<&str, usize>
         0.0
     };
 
-    (dp, r)
+    (dp, r, all_fields)
 }
 
-/// 处理单个样本的基因型（仅修改GT部分，保留DP，不输出DV）
+/// 处理单个样本的基因型（仅修改GT字段，保留所有其他字段）
 fn process_sample_gt(
     sample_str: &str,
     alt_base: &str,
@@ -77,30 +84,49 @@ fn process_sample_gt(
     tol: f64,
     stats: &mut GenotypeStats
 ) -> String {
-    let (dp, r) = extract_sample_dp_and_r_value(sample_str, format_map);
+    // 提取DP、r值，以及样本列的所有原始字段
+    let (dp, r, mut all_fields) = extract_sample_info(sample_str, format_map);
 
-    // 仅修改GT部分，DP保留原始值，不输出DV
-    let new_gt = if dp == 0 && alt_base == "." {
-        stats.a_count += 1;
-        format!("0/0:{}", dp)
-    } else if dp >= dphom && r <= tol {
-        stats.a_count += 1;
-        format!("0/0:{}", dp)
-    } else if dp >= dphom && r >= 1.0 - tol {
-        stats.b_count += 1;
-        format!("1/1:{}", dp)
-    } else if dp >= dphet && r >= 0.5 - tol && r <= 0.5 + tol {
-        stats.h_count += 1;
-        format!("0/1:{}", dp)
-    } else {
-        stats.n_count += 1;
-        format!("./.:{}", dp)
+    // 找到GT字段的索引（必须存在）
+    let gt_idx = match format_map.get("GT") {
+        Some(&idx) => idx,
+        None => {
+            // 无GT字段则返回原始样本字符串
+            return sample_str.to_string();
+        }
     };
 
-    new_gt
+    // 确保索引有效（防止样本字段数不足）
+    if gt_idx >= all_fields.len() {
+        return sample_str.to_string();
+    }
+
+    // 仅修改GT字段的值，其他字段完全保留
+    let new_gt = if dp == 0 && alt_base == "." {
+        stats.a_count += 1;
+        "0/0"
+    } else if dp >= dphom && r <= tol {
+        stats.a_count += 1;
+        "0/0"
+    } else if dp >= dphom && r >= 1.0 - tol {
+        stats.b_count += 1;
+        "1/1"
+    } else if dp >= dphet && r >= 0.5 - tol && r <= 0.5 + tol {
+        stats.h_count += 1;
+        "0/1"
+    } else {
+        stats.n_count += 1;
+        "./."
+    };
+
+    // 替换GT字段的值
+    all_fields[gt_idx] = new_gt.to_string();
+
+    // 重新拼接所有字段（保留所有原始字段，仅修改GT）
+    all_fields.join(":")
 }
 
-/// 核心处理逻辑：FORMAT列完全保留原始值，修复类型不匹配问题
+/// 核心处理逻辑：FORMAT列保持原始，样本列仅修改GT字段，保留所有其他字段
 pub fn process_vcf_line(
     line: &str,
     args: &Args,
@@ -129,13 +155,14 @@ pub fn process_vcf_line(
         return Ok(None);
     }
 
-    // 2. 解析FORMAT（仅用于找DP/AD，不修改FORMAT本身）
+    // 2. 解析FORMAT（仅用于找GT/DP/AD索引，不修改FORMAT本身）
     let format_map = parse_format_fields(format_str);
-    if !format_map.contains_key("DP") {
-        return Ok(None); // 无DP字段则跳过
+    // 必须包含GT和DP字段
+    if !format_map.contains_key("GT") || !format_map.contains_key("DP") {
+        return Ok(None);
     }
 
-    // 3. 处理样本列（仅修改GT，FORMAT列不变）
+    // 3. 处理样本列（仅修改GT字段，保留所有其他字段）
     let mut stats = GenotypeStats::default();
     let mut modified_samples = Vec::new();
     for sample_str in parts.iter().skip(9) {
@@ -182,32 +209,24 @@ pub fn process_vcf_line(
         return Ok(None);
     }
 
-    // ========== 将new_parts改为Vec<String> ==========
+    // 5. 构建最终行（FORMAT列保持原始，样本列保留所有字段）
     let mut new_parts = Vec::with_capacity(parts.len());
-
-    // 前8列：将&str转为String存入
+    // 前8列：保留原始值（转为String）
     for part in &parts[0..8] {
         new_parts.push(part.to_string());
     }
-
-    // FORMAT列：原始值转为String存入（保持原列）
+    // FORMAT列：100%保留原始值
     new_parts.push(format_str.to_string());
-
-    // 样本列：直接扩展String类型的modified_samples（无类型冲突）
+    // 样本列：仅修改GT，保留所有其他字段
     new_parts.extend(modified_samples);
 
-    // 拼接最终行
     Ok(Some(new_parts.join("\t")))
 }
 
 /// 生成过滤规则注释行（无MQ/DV相关）
 pub fn generate_filter_comment(args: &Args) -> String {
-    let dphom = args.dphom;
-    let dphet = args.dphet;
-    let tol = args.tol;
-
     format!(
         "##FilterRule=<ID=CustomFilter,Description=\"dphom={}, dphet={}, tol={}, minqual={}, mindp={}, minhomn={}, minpresent={}, minhomp={}, minmaf={}\">",
-        dphom, dphet, tol, args.minqual, args.mindp, args.minhomn, args.minpresent, args.minhomp, args.minmaf
+        args.dphom, args.dphet, args.tol, args.minqual, args.mindp, args.minhomn, args.minpresent, args.minhomp, args.minmaf
     )
 }
