@@ -1,10 +1,10 @@
-# VCF Filter & Genotype Calling (Rust Version)
+# VCF Filter (Rust Version)
 A high-performance Rust reimplementation of the AWK VCF filtering script, with enhanced compatibility, performance and maintainability.  
-原AWK VCF过滤脚本的高性能Rust重实现版本，提升了兼容性、性能和可维护性。
+
 
 ## Reference 参考
 Original AWK script source: [https://bitbucket.org/ipk_dg_public/vcf_filtering/](https://bitbucket.org/ipk_dg_public/vcf_filtering/)  
-原始AWK脚本参考来源：[https://bitbucket.org/ipk_dg_public/vcf_filtering/](https://bitbucket.org/ipk_dg_public/vcf_filtering/)
+
 
 ## Input File Format 输入文件格式
 The program reads VCF/VCF.gz files (supports BGZIP compression) and has the following assumptions:  
@@ -20,7 +20,6 @@ The program reads VCF/VCF.gz files (supports BGZIP compression) and has the foll
 ## Installation & Compilation 安装与编译
 ### Prerequisites 前置条件
 + Rust programming environment (1.60+): [https://www.rust-lang.org/tools/install](https://www.rust-lang.org/tools/install)  
-Rust编程环境（1.60及以上版本）：[https://www.rust-lang.org/tools/install](https://www.rust-lang.org/tools/install)
 
 ### Install 安装
 ```bash

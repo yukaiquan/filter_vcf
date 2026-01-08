@@ -142,10 +142,10 @@ pub fn process_vcf_line(
     let alt_base = parts[4];
     let qual = parts[5].parse::<f64>().unwrap_or(0.0);
     let info = parts[7];          // 保留原始INFO
-    let format_str = parts[8];    // 【关键】原始FORMAT列，全程不修改
+    let format_str = parts[8];    // 原始FORMAT列
     let info_dp = extract_info_dp(info, dp_re);
 
-    // 前置过滤（多碱基、低QUAL等）
+    // 前置过滤（多碱基、低QUAL等）这里把indel类型去除了，仅对SNP进行过滤
     if ref_base.len() > 1
         || alt_base.len() > 1
         || qual < args.minqual
