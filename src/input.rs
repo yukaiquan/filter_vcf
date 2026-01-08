@@ -1,13 +1,9 @@
-use anyhow::{Context, Result};
-use clap::Parser;
+use anyhow::{Context};
 use flate2::read::MultiGzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use regex::Regex;
-use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
-use std::path::Path;
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use crate::args::Args;
 
 
@@ -42,7 +38,6 @@ pub fn open_output(output_path: &Option<String>, compress_level: u32) -> anyhow:
     match output_path {
         Some(path) => {
             let file = File::create(path).context("Failed to create output file")?;
-            // 修正：Compression::new需要u8类型
             let compress_level = Compression::new(compress_level as u32);
             if path.ends_with(".gz") {
                 let encoder = GzEncoder::new(file, compress_level);

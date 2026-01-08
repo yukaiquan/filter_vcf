@@ -6,21 +6,15 @@ use crate::input::{open_input,open_output};
 use crate::vcf::{generate_filter_comment,process_vcf_line};
 use anyhow::{Context, Result};
 use clap::Parser;
-use flate2::read::MultiGzDecoder;
-use flate2::write::GzEncoder;
-use flate2::Compression;
 use regex::Regex;
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
-use std::path::Path;
+use std::io::{ BufRead, Read, Write};
 
 
 fn main() -> Result<()> {
     let args = Args::parse();
     println!("Using parameters: {:?}", args);
 
-    // 预编译DP正则（仅提取INFO的DP）
+    // 预编译DP正则
     let dp_re = Regex::new(r"DP=(\d+)").context("Failed to compile DP regex")?;
     // 生成过滤规则注释行
     let filter_comment = generate_filter_comment(&args);

@@ -1,13 +1,5 @@
-use anyhow::{Context, Result};
 use clap::Parser;
-use flate2::read::MultiGzDecoder;
-use flate2::write::GzEncoder;
-use flate2::Compression;
-use regex::Regex;
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
-use std::path::Path;
+
 
 /// VCF Filtering Tool (https://bitbucket.org/ipk_dg_public/vcf_filtering/)
 /// kaiquanyu@icloud.com

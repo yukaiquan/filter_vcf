@@ -1,13 +1,8 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use flate2::read::MultiGzDecoder;
-use flate2::write::GzEncoder;
-use flate2::Compression;
 use regex::Regex;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
-use std::path::Path;
+use std::io::{ BufRead};
 use crate::args::Args;
 
 /// 基因型统计结果结构体（仅保留计数，不处理字段）
