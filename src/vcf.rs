@@ -33,8 +33,7 @@ fn parse_format_fields(format_str: &str) -> HashMap<&str, usize> {
     field_map
 }
 
-/// 提取样本的DP、r值，同时保留所有原始字段（关键修复）
-/// 提取样本的DP、r值，同时保留所有原始字段（修复类型转换错误）
+/// 提取样本的DP、r值，同时保留所有原始字段
 fn extract_sample_info(
     gt_str: &str,
     format_map: &HashMap<&str, usize>
@@ -74,7 +73,7 @@ fn extract_sample_info(
     (dp, r, all_fields)
 }
 
-/// 处理单个样本的基因型（仅修改GT字段，保留所有其他字段）
+/// 处理单个样本的基因型
 fn process_sample_gt(
     sample_str: &str,
     alt_base: &str,
@@ -87,7 +86,7 @@ fn process_sample_gt(
     // 提取DP、r值，以及样本列的所有原始字段
     let (dp, r, mut all_fields) = extract_sample_info(sample_str, format_map);
 
-    // 找到GT字段的索引（必须存在）
+    // 找到GT字段的索引
     let gt_idx = match format_map.get("GT") {
         Some(&idx) => idx,
         None => {
@@ -96,7 +95,7 @@ fn process_sample_gt(
         }
     };
 
-    // 确保索引有效（防止样本字段数不足）
+    // 确保索引有效
     if gt_idx >= all_fields.len() {
         return sample_str.to_string();
     }
@@ -137,7 +136,7 @@ pub fn process_vcf_line(
         return Ok(None); // 列数不足，跳过无效行
     }
 
-    // 1. 基础字段提取（FORMAT列直接用原始值）
+    // 1. 基础字段提取
     let ref_base = parts[3];
     let alt_base = parts[4];
     let qual = parts[5].parse::<f64>().unwrap_or(0.0);
@@ -155,14 +154,14 @@ pub fn process_vcf_line(
         return Ok(None);
     }
 
-    // 2. 解析FORMAT（仅用于找GT/DP/AD索引，不修改FORMAT本身）
+    // 2. 解析FORMAT（仅用于找GT/DP/AD索引）
     let format_map = parse_format_fields(format_str);
     // 必须包含GT和DP字段
     if !format_map.contains_key("GT") || !format_map.contains_key("DP") {
         return Ok(None);
     }
 
-    // 3. 处理样本列（仅修改GT字段，保留所有其他字段）
+    // 3. 处理样本列
     let mut stats = GenotypeStats::default();
     let mut modified_samples = Vec::new();
     for sample_str in parts.iter().skip(9) {
@@ -178,7 +177,7 @@ pub fn process_vcf_line(
         modified_samples.push(new_sample);
     }
 
-    // 4. 群体/MAF过滤（逻辑不变）
+    // 4. 群体/MAF过滤
     stats.present = stats.a_count + stats.b_count + stats.h_count;
     let present_ratio = if (stats.present + stats.n_count) > 0 {
         stats.present as f64 / (stats.present + stats.n_count) as f64
@@ -223,7 +222,7 @@ pub fn process_vcf_line(
     Ok(Some(new_parts.join("\t")))
 }
 
-/// 生成过滤规则注释行（无MQ/DV相关）
+/// 生成过滤规则注释行
 pub fn generate_filter_comment(args: &Args) -> String {
     format!(
         "##FilterRule=<ID=CustomFilter,Description=\"dphom={}, dphet={}, tol={}, minqual={}, mindp={}, minhomn={}, minpresent={}, minhomp={}, minmaf={}\">",

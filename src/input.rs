@@ -6,8 +6,6 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use crate::args::Args;
 
-
-
 /// 打开输入（支持文件/标准输入，压缩自动检测）
 pub fn open_input(args: &Args) -> anyhow::Result<Box<dyn BufRead>> {
     match &args.input {

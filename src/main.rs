@@ -78,7 +78,7 @@ fn main() -> Result<()> {
         writeln!(writer, "{}", header_line)?;
     }
 
-    // 2. 写入过滤规则注释行（Header最后面，#CHROM之前）
+    // 2. 写入过滤规则注释行
     writeln!(writer, "{}", filter_comment)?;
 
     // 3. 写入#CHROM行
