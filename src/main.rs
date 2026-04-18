@@ -12,7 +12,7 @@ use std::io::{ BufRead, Read, Write};
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    println!("Using parameters: {:?}", args);
+    // println!("Using parameters: {:?}", args);
 
     // 预编译DP正则
     let dp_re = Regex::new(r"DP=(\d+)").context("Failed to compile DP regex")?;
@@ -26,16 +26,16 @@ fn main() -> Result<()> {
     // 打印输入输出来源
     match (&args.input, &args.output) {
         (Some(in_path), Some(out_path)) => {
-            println!("Reading from file: {}, Writing to file: {}", in_path, out_path);
+            // println!("Reading from file: {}, Writing to file: {}", in_path, out_path);
         }
         (Some(in_path), None) => {
-            println!("Reading from file: {}, Writing to stdout", in_path);
+            // println!("Reading from file: {}, Writing to stdout", in_path);
         }
         (None, Some(out_path)) => {
-            println!("Reading from stdin, Writing to file: {}", out_path);
+            // println!("Reading from stdin, Writing to file: {}", out_path);
         }
         (None, None) => {
-            println!("Reading from stdin, Writing to stdout (full pipeline mode)");
+            // println!("Reading from stdin, Writing to stdout (full pipeline mode)");
         }
     }
 
@@ -116,10 +116,10 @@ fn main() -> Result<()> {
     writer.flush()?;
 
     // 完成提示
-    match (&args.input, &args.output) {
-        (_, Some(path)) => println!("Processing completed! Output file: {}", path),
-        (_, None) => println!("Processing completed! Output to stdout"),
-    }
+    // match (&args.input, &args.output) {
+    //     (_, Some(path)) => println!("Processing completed! Output file: {}", path),
+    //     (_, None) => println!("Processing completed! Output to stdout"),
+    // }
 
     Ok(())
 }
