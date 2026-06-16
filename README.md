@@ -76,6 +76,9 @@ cargo build --release
 # Simplified usage with default parameters
 # 使用默认参数的简化用法
 ./vcf_filter -i input.vcf -o output.vcf --min-dp 50 --min-maf 0.05
+
+# ～v～
+bcftools view -V indels -i 'MAC > 3' -m2 -M2 GBS_chr1A.vcf.gz | filter_vcf --dphom 2 --dphet 4 --minpresent 0.5 --minmaf 0.05 | bgzip -c > GBS_chr1A_M2m2_dp2het4miss50maf005.vcf.gz
 ```
 
 ## Parameters 参数说明
