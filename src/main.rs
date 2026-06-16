@@ -2,17 +2,25 @@ mod args;
 mod input;
 mod vcf;
 use crate::args::Args;
-use crate::input::{open_input,open_output};
-use crate::vcf::{generate_filter_comment,process_vcf_line};
+use crate::input::{open_input, open_output};
+use crate::vcf::{generate_filter_comment, process_vcf_line};
 use anyhow::{Context, Result};
 use clap::Parser;
+use rayon::ThreadPoolBuilder;
 use regex::Regex;
-use std::io::{ BufRead, Read, Write};
-
+use std::io::{BufRead, Read, Write};
 
 fn main() -> Result<()> {
     let args = Args::parse();
     // println!("Using parameters: {:?}", args);
+
+    // 配置并行处理线程数
+    if args.threads > 0 {
+        ThreadPoolBuilder::new()
+            .num_threads(args.threads)
+            .build_global()
+            .context("Failed to configure thread pool")?;
+    }
 
     // 预编译DP正则
     let dp_re = Regex::new(r"DP=(\d+)").context("Failed to compile DP regex")?;
