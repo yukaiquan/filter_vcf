@@ -1,0 +1,130 @@
+name: Build Rust Multi-Platform Binaries
+
+# 触发时机：push 到 master/main、打 tag 发布、手动触发
+on:
+  push:
+    branches: [ master, main ]
+  tags:
+    - 'v*'
+  workflow_dispatch: # 页面手动运行
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # 一个平台失败不中断其他编译
+      matrix:
+        target:
+          # Linux 静态 musl（无系统依赖，推荐生信工具）
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+          # Windows
+          - x86_64-pc-windows-msvc
+          # macOS
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+        include:
+          # 区分系统后缀、打包脚本
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu
+            ext: ""
+            arch: linux-x86_64
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu
+            ext: ""
+            arch: linux-aarch64
+          - target: x86_64-pc-windows-msvc
+            os: windows
+            ext: ".exe"
+            arch: windows-x86_64
+          - target: x86_64-apple-darwin
+            os: macos
+            ext: ""
+            arch: macos-x86_64
+          - target: aarch64-apple-darwin
+            os: macos
+            ext: ""
+            arch: macos-aarch64
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # 安装 Rust 工具链 + 对应编译目标
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Linux musl 额外安装 musl 编译依赖
+      - name: Install musl tools (Linux)
+        if: matrix.os == 'ubuntu'
+        run: sudo apt-get update && sudo apt-get install musl-tools
+
+      # 缓存 cargo 编译依赖，大幅提速
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ matrix.target }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ matrix.target }}-cargo-target-${{ hashFiles('**/Cargo.toml') }}
+
+      # 编译 release 静态二进制
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      # 提取产物、打包
+      - name: Package artifact
+        shell: bash
+        run: |
+          BIN_NAME=filter_vcf
+          TARGET_DIR=target/${{ matrix.target }}/release
+          EXT=${{ matrix.ext }}
+          ARCH=${{ matrix.arch }}
+          OUT_NAME=${BIN_NAME}-${ARCH}
+          
+          mkdir -p dist/${OUT_NAME}
+          cp ${TARGET_DIR}/${BIN_NAME}${EXT} dist/${OUT_NAME}/
+          
+          # 附带 LICENSE / README 一起打包
+          [ -f README.md ] && cp README.md dist/${OUT_NAME}/
+          [ -f LICENSE ] && cp LICENSE dist/${OUT_NAME}/
+
+          # 压缩包
+          cd dist
+          if [[ "${{ matrix.os }}" == "windows" ]]; then
+            zip -r ${OUT_NAME}.zip ${OUT_NAME}
+          else
+            tar zcvf ${OUT_NAME}.tar.gz ${OUT_NAME}
+          fi
+
+      # 上传打包文件到 CI 临时存储
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          path: dist/*.tar.gz
+          retention-days: 30
+
+  # 打 tag (v*) 时自动发布 Release，把所有二进制附件上传
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all built binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*/*.tar.gz artifacts/*/*.zip
+          generate_release_notes: true # 自动生成更新日志
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
