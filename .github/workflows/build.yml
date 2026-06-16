@@ -55,6 +55,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
+          name: linux-${{ matrix.arch }}
           path: dist/*.tar.gz
           retention-days: 90
 
@@ -94,6 +95,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
+          name: ${{ matrix.arch }}
           path: dist/*.zip
           retention-days: 90
 
@@ -137,6 +139,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
+          name: mac-${{ matrix.arch }}
           path: dist/*.tar.gz
           retention-days: 90
 
@@ -156,5 +159,6 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: false
+          overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
