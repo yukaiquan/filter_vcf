@@ -142,6 +142,7 @@ jobs:
           name: mac-${{ matrix.arch }}
           path: dist/*.tar.gz
           retention-days: 90
+
   release:
     needs: [build-linux, build-windows, build-macos]
     runs-on: ubuntu-latest
@@ -154,9 +155,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files:
-            - artifacts/**/*.tar.gz
-            - artifacts/**/*.zip
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
           generate_release_notes: true
           draft: false
           prerelease: false
