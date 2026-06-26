@@ -1,5 +1,6 @@
 use crate::args::Args;
 use anyhow::Context;
+use bgzip::{BGZFError, BGZFWriter};
 use flate2::Compression;
 use flate2::read::MultiGzDecoder;
 use flate2::write::GzEncoder;
@@ -32,6 +33,7 @@ pub fn open_input(args: &Args) -> anyhow::Result<Box<dyn BufRead>> {
 }
 
 /// 打开输出（支持文件/标准输出，压缩可选）
+/// 普通压缩转换为BGZF压缩，压缩级别可选，适配生信软件
 pub fn open_output(
     output_path: &Option<String>,
     compress_level: u32,
@@ -39,9 +41,9 @@ pub fn open_output(
     match output_path {
         Some(path) => {
             let file = File::create(path).context("Failed to create output file")?;
-            let compress_level = Compression::new(compress_level as u32);
+            let compress_level = bgzip::Compression::new(compress_level as u32)?;
             if path.ends_with(".gz") {
-                let encoder = GzEncoder::new(file, compress_level);
+                let encoder = BGZFWriter::new(file, compress_level);
                 Ok(Box::new(BufWriter::new(encoder)))
             } else {
                 Ok(Box::new(BufWriter::new(file)))
