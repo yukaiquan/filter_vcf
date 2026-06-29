@@ -54,6 +54,8 @@ fn main() -> Result<()> {
     let mut header_lines = Vec::new(); // 收集所有原始Header行
     let mut chrom_header = String::new(); // 存储#CHROM行
     let mut header_finished = false;
+    // 保存 #CHROM 后的第一条数据行（while 循环 break 时 buf 中残留的行）
+    let mut first_data_line: Option<String> = None;
 
     while reader.read_line(&mut buf)? > 0 {
         let line = buf.trim_end().to_string();
@@ -75,8 +77,9 @@ fn main() -> Result<()> {
             continue;
         }
 
-        // Header处理完成，跳出循环
+        // Header处理完成，跳出循环（此时 buf 中是第一条数据行）
         if header_finished {
+            first_data_line = Some(line);
             break;
         }
 
@@ -105,6 +108,24 @@ fn main() -> Result<()> {
 
     // ========== 处理数据行 ==========
     let mut line_num = 0;
+
+    // 先处理 while 循环中残留的第一条数据行
+    if let Some(ref first_line) = first_data_line {
+        line_num += 1;
+        if !first_line.is_empty() && !first_line.starts_with('#') {
+            match process_vcf_line(first_line, &args, &dp_re) {
+                Ok(Some(output_line)) => {
+                    writeln!(writer, "{}", output_line)?;
+                    writer.flush()?;
+                }
+                Ok(None) => {} // 不符合条件，跳过
+                Err(e) => {
+                    eprintln!("Failed to process line {}: {:?}, skipping", line_num, e);
+                }
+            }
+        }
+    }
+
     loop {
         buf.clear();
         let bytes_read = reader.read_line(&mut buf)?;
