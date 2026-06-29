@@ -79,6 +79,16 @@ pub struct Args {
     /// Number of threads for parallel processing [default: 1=auto-use 1 CPU cores]
     #[arg(long, default_value_t = 1)]
     pub threads: usize,
+
+    /// 样本深度配置文件路径（TSV：sample,dphom_min,dphom_max,dphet_min,dphet_max）
+    /// Sample depth config file (TSV). 不指定则所有样本使用全局 --dphom/--dphet
+    #[arg(long)]
+    pub config: Option<String>,
+
+    /// [内部字段] 按样本列对齐的已加载阈值表，非命令行参数
+    /// [internal] per-sample loaded thresholds aligned by column index, not a CLI arg
+    #[arg(skip)]
+    pub sample_config: Option<crate::config::SampleConfig>,
 }
 
 #[cfg(test)]

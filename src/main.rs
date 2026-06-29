@@ -1,7 +1,9 @@
 mod args;
+mod config;
 mod input;
 mod vcf;
 use crate::args::Args;
+use crate::config::load_config;
 use crate::input::{open_input, open_output};
 use crate::vcf::{generate_filter_comment, process_vcf_line};
 use anyhow::{Context, Result};
@@ -11,7 +13,7 @@ use regex::Regex;
 use std::io::{BufRead, Read, Write};
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let mut args = Args::parse();
     // println!("Using parameters: {:?}", args);
 
     // 配置并行处理线程数
@@ -79,6 +81,15 @@ fn main() -> Result<()> {
         }
 
         buf.clear();
+    }
+
+    // 解析样本名（#CHROM 行第 10 列起），并按需加载按样本深度配置
+    {
+        let cols: Vec<&str> = chrom_header.split('\t').collect();
+        let sample_names: Vec<String> = cols.iter().skip(9).map(|s| s.to_string()).collect();
+        if let Some(cfg_path) = &args.config {
+            args.sample_config = Some(load_config(cfg_path, &sample_names)?);
+        }
     }
 
     // 1. 写入所有原始非#CHROM Header行

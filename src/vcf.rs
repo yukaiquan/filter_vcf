@@ -1,10 +1,10 @@
 use crate::args::Args;
+use crate::config::SampleThresholds;
 use anyhow::{Context, Result};
 use clap::Parser;
 use rayon::prelude::*;
 use regex::Regex;
 use std::collections::HashMap;
-use std::io::BufRead;
 
 /// 基因型统计结果结构体
 #[derive(Debug, Default, Clone, Copy)]
@@ -34,6 +34,34 @@ fn parse_format_fields(format_str: &str) -> HashMap<&str, usize> {
     field_map
 }
 
+/// 提取替代等位深度：优先 AD（逗号分隔，取第 2 个值），AD 不存在则回退 DV（单整数）
+/// 与 AWK 脚本的 DV 字段语义对齐；AD[1] 在 GT:DP:AD 格式下与 DV 数值等价
+fn extract_alt_depth(all_fields: &[&str], format_map: &HashMap<&str, usize>) -> u32 {
+    // 优先使用 AD 字段（ref,alt 格式，取 alt）
+    if let Some(&idx) = format_map.get("AD") {
+        if let Some(&ad_str) = all_fields.get(idx) {
+            if ad_str == "." {
+                return 0;
+            }
+            let ad_parts: Vec<&str> = ad_str.split(',').collect();
+            return match ad_parts.len() {
+                1 => ad_parts[0].parse::<u32>().unwrap_or(0),
+                _ => ad_parts[1].parse::<u32>().unwrap_or(0),
+            };
+        }
+    }
+    // 回退使用 DV 字段
+    if let Some(&idx) = format_map.get("DV") {
+        if let Some(&dv_str) = all_fields.get(idx) {
+            if dv_str == "." {
+                return 0;
+            }
+            return dv_str.parse::<u32>().unwrap_or(0);
+        }
+    }
+    0
+}
+
 /// 提取样本的DP、r值（使用引用避免不必要的字符串分配）
 fn extract_sample_info_optimized(gt_str: &str, format_map: &HashMap<&str, usize>) -> (u32, f64) {
     // 使用引用数组，零内存分配
@@ -52,23 +80,9 @@ fn extract_sample_info_optimized(gt_str: &str, format_map: &HashMap<&str, usize>
         })
         .unwrap_or(0);
 
-    // 提取AD计算r值（仅用于判断，不修改AD字段）
+    // 提取替代等位深度计算r值（AD 优先，回退 DV）
     let r = if dp > 0 {
-        let dv = format_map
-            .get("AD")
-            .and_then(|&idx| all_fields.get(idx))
-            .map(|&ad_str| {
-                if ad_str == "." {
-                    0
-                } else {
-                    let ad_parts: Vec<&str> = ad_str.split(',').collect();
-                    match ad_parts.len() {
-                        1 => ad_parts[0].parse::<u32>().unwrap_or(0),
-                        _ => ad_parts[1].parse::<u32>().unwrap_or(0),
-                    }
-                }
-            })
-            .unwrap_or(0);
+        let dv = extract_alt_depth(&all_fields, format_map);
         dv as f64 / dp as f64
     } else {
         0.0
@@ -77,7 +91,7 @@ fn extract_sample_info_optimized(gt_str: &str, format_map: &HashMap<&str, usize>
     (dp, r)
 }
 
-/// 提取样本的DP、r值，同时保留所有原始字段（用于测试兼容性）
+/// 提取样本的DP、r值，同时保留所有原始字段
 #[cfg(test)]
 fn extract_sample_info(gt_str: &str, format_map: &HashMap<&str, usize>) -> (u32, f64, Vec<String>) {
     // 关键修复：将&str迭代器转为String迭代器后再collect
@@ -99,23 +113,10 @@ fn extract_sample_info(gt_str: &str, format_map: &HashMap<&str, usize>) -> (u32,
         })
         .unwrap_or(0);
 
-    // 提取AD计算r值（仅用于判断，不修改AD字段）
+    // 提取AD计算r值（AD 优先，回退 DV）
     let r = if dp > 0 {
-        let dv = format_map
-            .get("AD")
-            .and_then(|&idx| all_fields.get(idx))
-            .map(|ad_str| {
-                if ad_str == "." {
-                    0
-                } else {
-                    let ad_parts: Vec<&str> = ad_str.split(',').collect();
-                    match ad_parts.len() {
-                        1 => ad_parts[0].parse::<u32>().unwrap_or(0),
-                        _ => ad_parts[1].parse::<u32>().unwrap_or(0),
-                    }
-                }
-            })
-            .unwrap_or(0);
+        let all_refs: Vec<&str> = all_fields.iter().map(|s| s.as_str()).collect();
+        let dv = extract_alt_depth(&all_refs, format_map);
         dv as f64 / dp as f64
     } else {
         0.0
@@ -189,6 +190,58 @@ fn process_sample_gt_parallel(
     (result, stats)
 }
 
+/// 带上下界阈值的样本处理（仅在配置启用时调用）
+/// 判断结构对齐原逻辑，每分支额外加入 dp <= *_max 上界判断
+fn process_sample_gt_with_thresholds(
+    sample_str: &str,
+    alt_base: &str,
+    format_map: &HashMap<&str, usize>,
+    th: SampleThresholds,
+    tol: f64,
+) -> (String, GenotypeStats) {
+    let mut stats = GenotypeStats::default();
+
+    let (dp, r) = extract_sample_info_optimized(sample_str, format_map);
+
+    let gt_idx = match format_map.get("GT") {
+        Some(&idx) => idx,
+        None => return (sample_str.to_string(), stats),
+    };
+
+    let all_fields: Vec<&str> = sample_str.split(':').collect();
+    if gt_idx >= all_fields.len() {
+        return (sample_str.to_string(), stats);
+    }
+
+    // 核心过滤逻辑：与原版分支结构一致，纯合/杂合各自加 dp 上界
+    let new_gt = if dp == 0 && alt_base == "." {
+        stats.a_count += 1;
+        "0/0"
+    } else if dp >= th.dphom_min && dp <= th.dphom_max && r <= tol {
+        stats.a_count += 1;
+        "0/0"
+    } else if dp >= th.dphom_min && dp <= th.dphom_max && r >= 1.0 - tol {
+        stats.b_count += 1;
+        "1/1"
+    } else if dp >= th.dphet_min && dp <= th.dphet_max && r >= 0.5 - tol && r <= 0.5 + tol {
+        stats.h_count += 1;
+        "0/1"
+    } else {
+        stats.n_count += 1;
+        "./."
+    };
+
+    let result = if all_fields[gt_idx] == new_gt {
+        sample_str.to_string()
+    } else {
+        let mut new_fields: Vec<String> = all_fields.iter().map(|&s| s.to_string()).collect();
+        new_fields[gt_idx] = new_gt.to_string();
+        new_fields.join(":")
+    };
+
+    (result, stats)
+}
+
 /// 处理单个样本的基因型
 #[cfg(test)]
 fn process_sample_gt(
@@ -239,9 +292,9 @@ fn process_sample_gt(
     };
     // ========== 核心过滤逻辑结束 ==========
 
-    // 仅在GT字段改变时才构建新字符串（优化内存分配）
+    // 仅在GT字段改变时才构建新字符串
     let result = if all_fields[gt_idx] == new_gt {
-        // GT字段未改变，直接返回原始字符串（零分配）
+        // GT字段未改变，直接返回原始字符串
         sample_str.to_string()
     } else {
         // GT字段改变，需要重新构建
@@ -268,7 +321,7 @@ pub fn process_vcf_line(line: &str, args: &Args, dp_re: &Regex) -> Result<Option
     let format_str = parts[8]; // 原始FORMAT列
     let info_dp = extract_info_dp(info, dp_re);
 
-    // 前置过滤（低QUAL、低DP等）
+    // 前置过滤
     // 根据 include_indel 参数决定是否过滤 indel
     let is_indel = ref_base.len() > 1 || alt_base.len() > 1;
     if (!args.include_indel && is_indel)
@@ -290,19 +343,35 @@ pub fn process_vcf_line(line: &str, args: &Args, dp_re: &Regex) -> Result<Option
     let samples: Vec<&str> = parts.iter().skip(9).copied().collect();
 
     // 使用 rayon 并行处理样本
-    let results: Vec<(String, GenotypeStats)> = samples
-        .into_par_iter() // 并行迭代器
-        .map(|sample_str| {
-            process_sample_gt_parallel(
-                sample_str,
-                alt_base,
-                &format_map,
-                args.dphom,
-                args.dphet,
-                args.tol,
-            )
-        })
-        .collect();
+    // 无配置 -> 走原路径，行为与未引入配置时完全一致
+    // 有配置 -> 走带上下界的并行路径
+    let results: Vec<(String, GenotypeStats)> = match &args.sample_config {
+        None => samples
+            .into_par_iter()
+            .map(|sample_str| {
+                process_sample_gt_parallel(
+                    sample_str,
+                    alt_base,
+                    &format_map,
+                    args.dphom,
+                    args.dphet,
+                    args.tol,
+                )
+            })
+            .collect(),
+        Some(cfg) => samples
+            .into_par_iter()
+            .enumerate()
+            .map(|(idx, sample_str)| {
+                let th = cfg
+                    .get(idx)
+                    .copied()
+                    .flatten()
+                    .unwrap_or_else(|| SampleThresholds::from_global(args.dphom, args.dphet));
+                process_sample_gt_with_thresholds(sample_str, alt_base, &format_map, th, args.tol)
+            })
+            .collect(),
+    };
 
     // 合并统计结果和样本字符串
     let mut stats = GenotypeStats::default();
@@ -503,6 +572,44 @@ mod tests {
         let (dp, r, _) = extract_sample_info("30,20:0/0:50", &format_map);
         assert_eq!(dp, 50);
         assert!((r - 0.4).abs() < 0.01);
+    }
+
+    // ==================== AD/DV 字段回退测试 ====================
+    #[test]
+    fn test_extract_sample_info_dv_fallback() {
+        // 仅含 DV 字段（AWK 原生格式 GT:DP:DV），无 AD -> 使用 DV
+        let format_map = parse_format_fields("GT:DP:DV");
+        let (dp, r, _) = extract_sample_info("0/0:50:20", &format_map);
+        assert_eq!(dp, 50);
+        assert!((r - 0.4).abs() < 0.01); // 20/50 = 0.4
+    }
+
+    #[test]
+    fn test_extract_sample_info_ad_preferred_over_dv() {
+        // 同时含 AD 和 DV -> 优先 AD（取 alt 分量 AD[1]）
+        let format_map = parse_format_fields("GT:DP:AD:DV");
+        // AD=50,0 -> alt=0；DV=20 -> 若误用 DV 则 r=0.4
+        let (dp, r, _) = extract_sample_info("0/0:50:50,0:20", &format_map);
+        assert_eq!(dp, 50);
+        assert!((r - 0.0).abs() < 0.01); // 应取 AD[1]=0，而非 DV=20
+    }
+
+    #[test]
+    fn test_extract_sample_info_neither_ad_nor_dv() {
+        // 既无 AD 也无 DV -> dv=0 -> r=0
+        let format_map = parse_format_fields("GT:DP:GQ");
+        let (dp, r, _) = extract_sample_info("0/0:50:99", &format_map);
+        assert_eq!(dp, 50);
+        assert!((r - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_extract_sample_info_optimized_dv_fallback() {
+        // 优化版同样支持 DV 回退
+        let format_map = parse_format_fields("GT:DP:DV");
+        let (dp, r) = extract_sample_info_optimized("1/1:100:100", &format_map);
+        assert_eq!(dp, 100);
+        assert!((r - 1.0).abs() < 0.01); // 100/100 = 1.0
     }
 
     // ==================== process_sample_gt 测试 ====================
