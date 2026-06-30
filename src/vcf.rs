@@ -213,7 +213,7 @@ fn process_sample_gt_with_thresholds(
         return (sample_str.to_string(), stats);
     }
 
-    // 核心过滤逻辑：与原版分支结构一致，纯合/杂合各自加 dp 上界
+    // 核心过滤逻辑：纯合/杂合各自加 dp 上界
     let new_gt = if dp == 0 && alt_base == "." {
         stats.a_count += 1;
         "0/0"

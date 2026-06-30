@@ -70,9 +70,9 @@ compare() {
     fi
 
     if [ "$awk_lines" -eq "$rust_lines" ]; then
-        echo "  ✅ 行数一致 ($awk_lines)"
+        echo "行数一致 ($awk_lines)"
     else
-        echo "  ❌ 行数不一致: AWK=$awk_lines Rust=$rust_lines (差 $((rust_lines-awk_lines)))"
+        echo "行数不一致: AWK=$awk_lines Rust=$rust_lines (差 $((rust_lines-awk_lines)))"
     fi
 
     # 提取两者的样本 GT 矩阵做逐位对比（只比较 GT 字段，忽略 DP/DV/INFO/FORMAT 差异）
@@ -119,11 +119,11 @@ compare() {
     local diff_out
     diff_out=$(diff "$TMP/awk.gt" "$TMP/rust.gt" | head -20)
     if [ -z "$diff_out" ]; then
-        echo "  ✅ 所有位点 GT 完全一致"
+        echo "  所有位点 GT 完全一致"
     else
         local diff_cnt
         diff_cnt=$(diff "$TMP/awk.gt" "$TMP/rust.gt" | grep -c "^[<>]")
-        echo "  ⚠️  GT 差异行数: $diff_cnt (双向)"
+        echo "  GT 差异行数: $diff_cnt (双向)"
         echo "$diff_out" | head -10 | sed 's/^/      /'
     fi
     echo ""

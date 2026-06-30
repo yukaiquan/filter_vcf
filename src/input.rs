@@ -1,11 +1,14 @@
 use crate::args::Args;
-use anyhow::Context;
-use bgzip::{BGZFError, BGZFWriter};
+use anyhow::{Context, anyhow};
 use flate2::Compression;
 use flate2::read::MultiGzDecoder;
-use flate2::write::GzEncoder;
+use flate2::write::DeflateEncoder;
+use noodles_bgzf as bgzf;
+use noodles_bgzf::io::writer::CompressionLevel;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
+// 引入noodles-bgzf
+use noodles_bgzf::io::{Reader as BgzfReader, Writer as BgzfWriter};
 
 /// 打开输入（支持文件/标准输入，压缩自动检测）
 pub fn open_input(args: &Args) -> anyhow::Result<Box<dyn BufRead>> {
@@ -34,22 +37,46 @@ pub fn open_input(args: &Args) -> anyhow::Result<Box<dyn BufRead>> {
 
 /// 打开输出（支持文件/标准输出，压缩可选）
 /// 普通压缩转换为BGZF压缩，压缩级别可选，适配生信软件
+// pub fn open_output(
+//     output_path: &Option<String>,
+//     compress_level: u32,
+// ) -> anyhow::Result<Box<dyn Write>> {
+//     match output_path {
+//         Some(path) => {
+//             let file = File::create(path).context("Failed to create output file")?;
+//             let compress_level = flate2::Compression::new(compress_level as u32);
+//             if path.ends_with(".gz") {
+//                 let encoder = flate2::write::GzEncoder::new(file, compress_level);
+//                 Ok(Box::new(BufWriter::new(encoder)))
+//             } else {
+//                 Ok(Box::new(BufWriter::new(file)))
+//             }
+//         }
+//         None => {
+//             let stdout = io::stdout();
+//             Ok(Box::new(BufWriter::new(stdout.lock())))
+//         }
+//     }
+// }
 pub fn open_output(
     output_path: &Option<String>,
-    compress_level: u32,
+    _compress_level: u32,
 ) -> anyhow::Result<Box<dyn Write>> {
     match output_path {
         Some(path) => {
             let file = File::create(path).context("Failed to create output file")?;
-            let compress_level = bgzip::Compression::new(compress_level as u32)?;
             if path.ends_with(".gz") {
-                let encoder = BGZFWriter::new(file, compress_level);
-                Ok(Box::new(BufWriter::new(encoder)))
+                // 当前版本仅支持无参new构造，无等级配置接口
+                let bgzf_writer = BgzfWriter::new(file);
+                // 外层BufWriter缓冲，提升大量文本写入性能
+                Ok(Box::new(BufWriter::new(bgzf_writer)))
             } else {
+                // 原始无压缩文本输出
                 Ok(Box::new(BufWriter::new(file)))
             }
         }
         None => {
+            // stdout管道直接裸输出，不做BGZF压缩
             let stdout = io::stdout();
             Ok(Box::new(BufWriter::new(stdout.lock())))
         }
